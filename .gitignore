@@ -2,3 +2,7 @@
 .npm-cache
 work/
 token-floating-config.json
+.agents/
+.codex/
+outputs/TokenFloatingWindow.ps1
+outputs/StartTokenFloatingWindow.bat
