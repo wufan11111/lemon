@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>合肥外卖小区通行查询管理（全小区可编辑）</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;font-family:"Microsoft YaHei",sans-serif;}
+body{background:#f5f5f5;padding:20px max(10px,calc(50vw - 700px));}
+.header{background:#e63946;color:#fff;padding:16px;text-align:center;border-radius:8px 8px 0 0;}
+.box{background:#fff;padding:16px;margin-bottom:10px;border-radius:0 0 8px 8px;}
+.add-box{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;align-items:center;}
+.check-group{display:flex;gap:8px;flex-wrap:wrap;}
+select,input[type="text"],button{padding:10px 12px;border:1px solid #ddd;border-radius:6px;font-size:15px;}
+.add-box select{width:140px;}
+.add-box input[type="text"]{flex:1;min-width:200px;}
+.btn-add{background:#27ae60;color:#fff;border:none;}
+.btn-clear{background:#999;color:#fff;border:none;}
+.btn-reset{background:#346edb;color:#fff;border:none;}
+.btn-edit{background:#ff9500;color:#fff;border:none;padding:2px 6px;font-size:12px;}
+.btn-del{background:#e53935;color:#fff;border:none;padding:2px 6px;font-size:12px;margin-left:4px;}
+#searchInput{width:100%;margin-bottom:8px;}
+table{width:100%;border-collapse:collapse;background:#fff;}
+th,td{padding:12px;border:1px solid #eee;vertical-align:top;}
+th{background:#f0f0f0;}
+.cell-community{display:flex;flex-wrap:wrap;gap:8px;align-items:center;}
+.tag-item{background:#f0f4f8;padding:6px 10px;border-radius:4px;display:flex;flex-wrap:wrap;align-items:center;gap:6px;}
+.flag{font-size:12px;padding:2px 4px;border-radius:3px;}
+.flag-bike{background:#d4edda;color:#155724;}
+.flag-walk{background:#fff3cd;color:#856404;}
+.flag-lift{background:#cce5ff;color:#004085;}
+.flag-stairs{background:#e2d9ff;color:#5a2d82;}
+.tips{margin-top:10px;color:#666;font-size:14px;}
+.no-data{text-align:center;padding:40px;color:#999;}
+/* 弹窗样式 */
+.modal-mask{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:999;display:none;}
+.modal-box{background:#fff;padding:20px;border-radius:8px;width:90%;max-width:420px;}
+.modal-title{font-size:18px;margin-bottom:16px;font-weight:bold;}
+.modal-row{margin:12px 0;display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+.modal-btn-wrap{margin-top:20px;display:flex;gap:10px;justify-content:flex-end;}
+</style>
+</head>
+<body>
+<div class="header"><h2>合肥外卖小区通行查询管理（全部小区可编辑标签/删除）</h2></div>
+<div class="box">
+<div class="add-box">
+<select id="areaSelect">
+<option value="通用">通用（万科所有小区）</option>
+<option value="瑶海区">瑶海区</option>
+<option value="新站区">新站区</option>
+<option value="包河区">包河区</option>
+<option value="庐阳区">庐阳区</option>
+<option value="蜀山区">蜀山区</option>
+<option value="政务区">政务区</option>
+<option value="滨湖区">滨湖区</option>
+<option value="肥东">肥东</option>
+<option value="肥西">肥西</option>
+</select>
+<input id="communityInput" placeholder="输入小区名称，多个用顿号隔开">
+<div class="check-group">
+<label><input type="checkbox" id="ckBike">骑行</label>
+<label><input type="checkbox" id="ckWalk">步行</label>
+<label><input type="checkbox" id="ckLift">电梯</label>
+<label><input type="checkbox" id="ckStairs">爬楼</label>
+</div>
+<button class="btn-add" id="addBtn">添加小区</button>
+<button class="btn-clear" id="clearBtn">清空新增</button>
+<button class="btn-reset" id="resetBtn">恢复原始小区</button>
+</div>
+<input id="searchInput" placeholder="输入区域/小区名称搜索">
+<div class="tips">标签：绿=骑行｜黄=步行｜蓝=电梯｜紫=爬楼；所有小区均可编辑、删除，可多选多个通行标签</div>
+</div>
+<table>
+<thead>
+<tr><th width="120">区域</th><th>小区列表（通行标签+编辑/删除）</th></tr>
+</thead>
+<tbody id="tableBody"></tbody>
+</table>
+
+<!-- 编辑弹窗 -->
+<div class="modal-mask" id="editMask">
+<div class="modal-box">
+<div class="modal-title">编辑小区通行标签</div>
+<div class="modal-row">小区名称：<span id="editName"></span></div>
+<div class="modal-row" id="editCheckGroup">
+<label><input type="checkbox" id="editBike">骑行</label>
+<label><input type="checkbox" id="editWalk">步行</label>
+<label><input type="checkbox" id="editLift">电梯</label>
+<label><input type="checkbox" id="editStairs">爬楼</label>
+</div>
+<div class="modal-btn-wrap">
+<button id="saveEditBtn" class="btn-add">保存修改</button>
+<button id="closeEditBtn" class="btn-clear">取消</button>
+</div>
+</div>
+</div>
+
+<script>
+// 初始原始基础小区（首次打开自动写入本地）
+const ORIGIN_BASE = [
+{area:"通用",name:"万科所有小区",flags:[]},
+{area:"瑶海区",name:"紫云府",flags:[]},
+{area:"瑶海区",name:"大众时代之光",flags:[]},
+{area:"瑶海区",name:"美科公馆",flags:[]},
+{area:"瑶海区",name:"保利海上明悦",flags:[]},
+{area:"瑶海区",name:"怡然居",flags:[]},
+{area:"瑶海区",name:"漕冲雅居",flags:[]},
+{area:"瑶海区",name:"万达华府",flags:[]},
+{area:"包河区",name:"滨湖龙川里",flags:[]},
+{area:"包河区",name:"信达天域林语苑",flags:[]},
+{area:"包河区",name:"南庭芳",flags:[]},
+{area:"包河区",name:"中海央墅",flags:[]},
+{area:"包河区",name:"建发雍王府",flags:[]},
+{area:"包河区",name:"余中新苑",flags:[]},
+{area:"包河区",name:"和光新苑",flags:[]},
+{area:"包河区",name:"江汽三村",flags:[]},
+{area:"包河区",name:"鼎元府邸",flags:[]},
+{area:"庐阳区",name:"畅和家园A区",flags:[]},
+{area:"蜀山区",name:"融科九重锦",flags:[]},
+{area:"蜀山区",name:"融侨天骏",flags:[]},
+{area:"蜀山区",name:"国茂天情湾",flags:[]},
+{area:"蜀山区",name:"太阳海岸花园",flags:[]},
+{area:"蜀山区",name:"绿地内生庄园",flags:[]},
+{area:"蜀山区",name:"融创信达政务壹号",flags:[]},
+{area:"蜀山区",name:"融创合肥壹号院",flags:[]},
+{area:"蜀山区",name:"绿城百合公寓",flags:[]},
+{area:"蜀山区",name:"祥源金港湾",flags:[]},
+{area:"蜀山区",name:"雍景半岛",flags:[]},
+{area:"蜀山区",name:"乐富强悦湖熙岸",flags:[]},
+{area:"蜀山区",name:"金鹏麓山院",flags:[]},
+{area:"蜀山区",name:"乐富强悦湖山院",flags:[]},
+{area:"蜀山区",name:"龙湖光年",flags:[]},
+{area:"蜀山区",name:"龙湖天境",flags:[]},
+{area:"蜀山区",name:"中海世家",flags:[]},
+{area:"蜀山区",name:"新华玉湖上院",flags:[]},
+{area:"蜀山区",name:"新华玉湖庄园",flags:[]},
+{area:"蜀山区",name:"中海岭湖墅",flags:[]},
+{area:"蜀山区",name:"天鹅湖凤曦府",flags:[]},
+{area:"蜀山区",name:"天鹅湖一号",flags:[]},
+{area:"蜀山区",name:"置地柏悦公馆南北",flags:[]},
+{area:"蜀山区",name:"翰墨园",flags:[]},
+{area:"蜀山区",name:"澜山园",flags:[]},
+{area:"蜀山区",name:"御水园",flags:[]},
+{area:"蜀山区",name:"湖畔·徽映阁",flags:[]},
+{area:"蜀山区",name:"陶然居",flags:[]},
+{area:"蜀山区",name:"上铁高铁花园",flags:[]},
+{area:"蜀山区",name:"凯旋门",flags:[]},
+{area:"蜀山区",name:"琥珀五环城",flags:[]},
+{area:"蜀山区",name:"恒大水晶国际广场",flags:[]},
+{area:"蜀山区",name:"融侨观澜",flags:[]},
+{area:"蜀山区",name:"雍锦半岛",flags:[]},
+{area:"蜀山区",name:"大富鸿学府",flags:[]},
+{area:"肥西",name:"新华御湖庄园",flags:[]}
+];
+const STORAGE_KEY = "hefei_all_communities";
+let allData = JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
+// 首次打开页面写入原始数据
+if(allData.length === 0){
+    allData = JSON.parse(JSON.stringify(ORIGIN_BASE));
+    saveData();
+}
+
+// DOM元素
+const tableBody = document.getElementById("tableBody");
+const searchInput = document.getElementById("searchInput");
+const areaSelect = document.getElementById("areaSelect");
+const communityInput = document.getElementById("communityInput");
+const addBtn = document.getElementById("addBtn");
+const clearBtn = document.getElementById("clearBtn");
+const resetBtn = document.getElementById("resetBtn");
+const ckBike = document.getElementById("ckBike");
+const ckWalk = document.getElementById("ckWalk");
+const ckLift = document.getElementById("ckLift");
+const ckStairs = document.getElementById("ckStairs");
+// 弹窗DOM
+const editMask = document.getElementById("editMask");
+const editName = document.getElementById("editName");
+const editBike = document.getElementById("editBike");
+const editWalk = document.getElementById("editWalk");
+const editLift = document.getElementById("editLift");
+const editStairs = document.getElementById("editStairs");
+const saveEditBtn = document.getElementById("saveEditBtn");
+const closeEditBtn = document.getElementById("closeEditBtn");
+let currentEditArea = "";
+let currentEditName = "";
+
+// 本地存储保存
+function saveData(){
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(allData));
+}
+
+// 渲染通行标签HTML（4种标签同时支持）
+function renderFlagHtml(flagsArr){
+    let html = "";
+    flagsArr.forEach(type=>{
+        if(type === "bike") html += `<span class="flag flag-bike">骑行</span>`;
+        if(type === "walk") html += `<span class="flag flag-walk">步行</span>`;
+        if(type === "lift") html += `<span class="flag flag-lift">电梯</span>`;
+        if(type === "stairs") html += `<span class="flag flag-stairs">爬楼</span>`;
+    })
+    return html;
+}
+
+// 删除单个小区（内置原始小区也可删）
+function deleteItem(area,name){
+    if(!confirm(`确认永久删除【${name}】？删除后只能点“恢复原始小区”找回`)) return;
+    allData = allData.filter(item => !(item.area === area && item.name === name));
+    saveData();
+    renderTable(allData);
+}
+
+// 打开编辑弹窗
+function openEditModal(area,name){
+    currentEditArea = area;
+    currentEditName = name;
+    const target = allData.find(item=>item.area === area && item.name === name);
+    editName.innerText = name;
+    // 回填4个勾选框
+    editBike.checked = target.flags.includes("bike");
+    editWalk.checked = target.flags.includes("walk");
+    editLift.checked = target.flags.includes("lift");
+    editStairs.checked = target.flags.includes("stairs");
+    editMask.style.display = "flex";
+}
+
+// 关闭编辑弹窗
+function closeEditModal(){
+    editMask.style.display = "none";
+    currentEditArea = "";
+    currentEditName = "";
+}
+
+// 保存编辑后的标签
+function saveEdit(){
+    const target = allData.find(item=>item.area === currentEditArea && item.name === currentEditName);
+    const newFlags = [];
+    if(editBike.checked) newFlags.push("bike");
+    if(editWalk.checked) newFlags.push("walk");
+    if(editLift.checked) newFlags.push("lift");
+    if(editStairs.checked) newFlags.push("stairs");
+    target.flags = newFlags;
+    saveData();
+    closeEditModal();
+    renderTable(allData);
+    alert("标签修改成功");
+}
+
+// 表格渲染（全部小区带编辑、删除按钮）
+function renderTable(list){
+    tableBody.innerHTML = "";
+    if(!list.length){
+        tableBody.innerHTML = `<tr><td colspan="2" class="no-data">暂无小区，点击恢复原始小区重置</td>`;
+        return;
+    }
+    // 按区域分组
+    const groupMap = {};
+    list.forEach(item=>{
+        if(!groupMap[item.area]) groupMap[item.area] = [];
+        groupMap[item.area].push(item);
+    })
+    Object.keys(groupMap).forEach(area=>{
+        const tr = document.createElement("tr");
+        let tagHtml = "";
+        groupMap[area].forEach(item=>{
+            tagHtml += `
+                <span class="tag-item">
+                    ${item.name}
+                    ${renderFlagHtml(item.flags)}
+                    <div>
+                        <button class="btn-edit" data-area="${item.area}" data-name="${item.name}">编辑</button>
+                        <button class="btn-del" data-area="${item.area}" data-name="${item.name}">删除</button>
+                    </div>
+                </span>
+            `;
+        })
+        tr.innerHTML = `<td>${area}</td><td class="cell-community">${tagHtml}</td>`;
+        tableBody.appendChild(tr);
+    })
+    // 绑定编辑、删除按钮事件
+    document.querySelectorAll(".btn-edit").forEach(btn=>{
+        btn.onclick = function(){
+            openEditModal(this.dataset.area, this.dataset.name);
+        }
+    })
+    document.querySelectorAll(".btn-del").forEach(btn=>{
+        btn.onclick = function(){
+            deleteItem(this.dataset.area, this.dataset.name);
+        }
+    })
+}
+
+// 初始渲染
+renderTable(allData);
+
+// 搜索过滤
+searchInput.addEventListener("input",()=>{
+    const key = searchInput.value.trim().toLowerCase();
+    if(!key) return renderTable(allData);
+    const filter = allData.filter(item=>
+        item.area.toLowerCase().includes(key) || item.name.toLowerCase().includes(key)
+    );
+    renderTable(filter);
+})
+
+// 添加小区按钮（新增爬楼勾选收集）
+addBtn.addEventListener("click",()=>{
+    const area = areaSelect.value.trim();
+    const nameText = communityInput.value.trim();
+    if(!nameText) return alert("请输入小区名称，多个用中文顿号隔开");
+    // 收集4类标签
+    const flags = [];
+    if(ckBike.checked) flags.push("bike");
+    if(ckWalk.checked) flags.push("walk");
+    if(ckLift.checked) flags.push("lift");
+    if(ckStairs.checked) flags.push("stairs");
+    const nameArr = nameText.split("、").map(s=>s.trim()).filter(s=>s);
+    nameArr.forEach(name=>{
+        // 去重，不重复添加
+        const exist = allData.some(i=>i.area === area && i.name === name);
+        if(!exist) allData.push({area,name,flags});
+    })
+    saveData();
+    communityInput.value = "";
+    ckBike.checked = ckWalk.checked = ckLift.checked = ckStairs.checked = false;
+    renderTable(allData);
+    alert("小区添加完成，所有勾选标签完整展示");
+})
+
+// 清空所有手动新增，保留原始基础小区
+clearBtn.addEventListener("click",()=>{
+    if(!confirm("清空所有手动新增的小区，保留原始基础小区？")) return;
+    allData = JSON.parse(JSON.stringify(ORIGIN_BASE));
+    saveData();
+    renderTable(allData);
+    alert("已清空新增，恢复原始基础小区");
+})
+
+// 完全重置：恢复出厂原始小区清单
+resetBtn.addEventListener("click",()=>{
+    if(!confirm("确认完全重置？所有编辑、新增、删除操作都会还原为初始小区！")) return;
+    allData = JSON.parse(JSON.stringify(ORIGIN_BASE));
+    saveData();
+    renderTable(allData);
+    alert("已还原为初始原始小区列表");
+})
+
+// 弹窗保存/取消
+saveEditBtn.onclick = saveEdit;
+closeEditBtn.onclick = closeEditModal;
+</script>
+</body>
+</html>

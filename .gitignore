@@ -1,0 +1,4 @@
+.vercel
+.npm-cache
+work/
+token-floating-config.json
