@@ -1,85 +1,70 @@
 $ErrorActionPreference = "Continue"
 
 $repo = Split-Path -Parent $MyInvocation.MyCommand.Path
+$logPath = Join-Path $repo "github-auto-sync.log"
+$intervalSeconds = 5
+
 Set-Location -LiteralPath $repo
 
-$ignoreDirs = @(
-    "\.git\",
-    "\.vercel\",
-    "\.npm-cache\",
-    "\work\",
-    "\.agents\",
-    "\.codex\"
-)
-
-function Test-IgnoredPath([string]$path) {
-    $normalized = $path.Replace("/", "\")
-    foreach ($dir in $ignoreDirs) {
-        if ($normalized.Contains($dir)) { return $true }
-    }
-    return $false
+function Write-Log([string]$message) {
+    $line = "[{0}] {1}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"), $message
+    Write-Host $line
+    Add-Content -LiteralPath $logPath -Value $line -Encoding UTF8
 }
 
-function Invoke-GitSync {
-    param([string]$reason)
+function Invoke-GitCommand([string[]]$arguments) {
+    $output = & git @arguments 2>&1
+    $code = $LASTEXITCODE
+    if ($output) {
+        foreach ($line in $output) {
+            Write-Log ("git {0}: {1}" -f ($arguments -join " "), $line)
+        }
+    }
+    return $code
+}
 
-    Start-Sleep -Seconds 2
+function Sync-Once {
+    $status = & git status --porcelain 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        foreach ($line in $status) { Write-Log "status failed: $line" }
+        return
+    }
 
-    $status = git status --porcelain
     if ([string]::IsNullOrWhiteSpace(($status | Out-String))) {
         return
     }
 
-    git add -A
-    git diff --cached --quiet
+    Write-Log "Detected local changes. Syncing..."
+
+    $code = Invoke-GitCommand @("add", "-A")
+    if ($code -ne 0) { return }
+
+    & git diff --cached --quiet
     if ($LASTEXITCODE -eq 0) {
+        Write-Log "No staged changes after add."
         return
     }
 
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    git commit -m "Auto sync $timestamp"
-    git push
+    $code = Invoke-GitCommand @("commit", "-m", "Auto sync $timestamp")
+    if ($code -ne 0) { return }
 
-    Write-Host "Synced to GitHub at $timestamp ($reason)"
+    $code = Invoke-GitCommand @("push")
+    if ($code -eq 0) {
+        Write-Log "Synced to GitHub."
+    } else {
+        Write-Log "Push failed. The commit is local and will retry on the next loop."
+    }
 }
 
-Write-Host "GitHub auto-sync is running for: $repo"
-Write-Host "Close this window to stop syncing."
+Write-Log "GitHub auto-sync started for $repo"
+Write-Log "Polling every $intervalSeconds seconds. Close this window to stop."
 
-$watcher = New-Object System.IO.FileSystemWatcher
-$watcher.Path = $repo
-$watcher.IncludeSubdirectories = $true
-$watcher.EnableRaisingEvents = $true
-
-$timer = New-Object System.Timers.Timer
-$timer.Interval = 3000
-$timer.AutoReset = $false
-
-$pendingReason = "change"
-$timer.add_Elapsed({
-    Invoke-GitSync -reason $script:pendingReason
-})
-
-$action = {
-    if (Test-IgnoredPath $Event.SourceEventArgs.FullPath) {
-        return
+while ($true) {
+    try {
+        Sync-Once
+    } catch {
+        Write-Log ("Unexpected error: " + $_.Exception.Message)
     }
-    $script:pendingReason = $Event.SourceEventArgs.ChangeType
-    $timer.Stop()
-    $timer.Start()
-}
-
-Register-ObjectEvent $watcher Changed -Action $action | Out-Null
-Register-ObjectEvent $watcher Created -Action $action | Out-Null
-Register-ObjectEvent $watcher Deleted -Action $action | Out-Null
-Register-ObjectEvent $watcher Renamed -Action $action | Out-Null
-
-try {
-    while ($true) {
-        Start-Sleep -Seconds 1
-    }
-} finally {
-    $watcher.EnableRaisingEvents = $false
-    $watcher.Dispose()
-    $timer.Dispose()
+    Start-Sleep -Seconds $intervalSeconds
 }

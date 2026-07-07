@@ -6,3 +6,4 @@ token-floating-config.json
 .codex/
 outputs/TokenFloatingWindow.ps1
 outputs/StartTokenFloatingWindow.bat
+github-auto-sync.log
